@@ -1,0 +1,231 @@
+import processing.serial.*; // Imports library for serial communication
+
+Serial myPort; // The serial port object
+PFont radarFont; // Font for the display text
+
+// An ArrayList to store the detected "pings" for the fading effect
+ArrayList<RadarPing> pings = new ArrayList<RadarPing>();
+
+// Variables to hold the data from Arduino
+String data = "";
+int iAngle = 0;
+int iDistance = 0;
+
+// --- A class to represent a single radar detection ---
+class RadarPing {
+  float angle;
+  float distance;
+  float lifespan = 255; // Controls the fade-out, starts at full visibility
+
+  RadarPing(float a, float d) {
+    angle = a;
+    distance = d;
+  }
+
+  // Update the ping's state (it fades over time)
+  void update() {
+    lifespan -= 1.5; // Adjust this value to change fade speed
+  }
+
+  // Draw the ping on the screen
+  void display() {
+    pushMatrix();
+    translate(width / 2, height - height * 0.074);
+    // Convert distance (cm) to pixel coordinates
+    float pixsDistance = map(distance, 0, 40, 0, (height - height * 0.18));
+    float x = pixsDistance * cos(radians(angle));
+    float y = -pixsDistance * sin(radians(angle));
+
+    // Draw the ping with a RED glow effect, fading based on its lifespan
+    noFill();
+    stroke(255, 80, 80, lifespan); // Outer red glow
+    strokeWeight(8);
+    point(x, y); 
+    stroke(255, 150, 150, lifespan * 0.8); // Inner lighter red point
+    strokeWeight(4);
+    point(x, y);
+
+    popMatrix();
+  }
+
+  // Check if the ping has faded completely
+  boolean isDead() {
+    return lifespan < 0;
+  }
+}
+
+
+void setup() {
+  size(1200, 700);
+  smooth();
+  
+  // Using a common monospaced font for a technical look
+  radarFont = createFont("Consolas", 20, true);
+  textFont(radarFont);
+
+  // --- Port Selection ---
+  printArray(Serial.list());
+  String portName = "COM7"; // Using COM7 as requested
+
+  try {
+    myPort = new Serial(this, portName, 9600);
+    myPort.bufferUntil('.');
+  } catch (Exception e) {
+    println("Error opening serial port. Is the correct port selected? Is the Arduino plugged in?");
+    e.printStackTrace();
+  }
+}
+
+void draw() {
+  // Draw a dark background
+  background(5, 15, 25);
+
+  // Call the functions to draw each part of the radar
+  drawRadar();
+  drawLine();
+  drawPings(); // The new function to draw fading echoes
+  drawText();
+}
+
+void serialEvent(Serial myPort) {
+  data = myPort.readStringUntil('.');
+  if (data != null) {
+    data = data.substring(0, data.length() - 1);
+    int commaIndex = data.indexOf(',');
+    if (commaIndex != -1) {
+      String angleString = data.substring(0, commaIndex);
+      String distanceString = data.substring(commaIndex + 1, data.length());
+      try {
+        iAngle = Integer.parseInt(angleString);
+        iDistance = Integer.parseInt(distanceString);
+        
+        // --- ADD A NEW PING ---
+        // If an object is detected in range, create a new RadarPing object
+        if (iDistance < 40 && iDistance > 0) {
+          pings.add(new RadarPing(iAngle, iDistance));
+        }
+        
+      } catch (NumberFormatException e) {
+        println("Malformed data: " + data);
+      }
+    }
+  }
+}
+
+void drawRadar() {
+  pushMatrix();
+  translate(width / 2, height - height * 0.074);
+  noFill();
+  strokeWeight(2);
+  
+  // Draw radar grid with a glow effect
+  color gridColor = color(60, 180, 150);
+  stroke(gridColor, 100);
+  arc(0, 0, (width - width * 0.0625), (width - width * 0.0625), PI, TWO_PI);
+  arc(0, 0, (width - width * 0.27), (width - width * 0.27), PI, TWO_PI);
+  arc(0, 0, (width - width * 0.479), (width - width * 0.479), PI, TWO_PI);
+  arc(0, 0, (width - width * 0.687), (width - width * 0.687), PI, TWO_PI);
+  line(-width / 2, 0, width / 2, 0);
+  line(0, 0, (-width / 2) * cos(radians(30)), (-width / 2) * sin(radians(30)));
+  line(0, 0, (-width / 2) * cos(radians(60)), (-width / 2) * sin(radians(60)));
+  line(0, 0, (-width / 2) * cos(radians(90)), (-width / 2) * sin(radians(90)));
+  line(0, 0, (-width / 2) * cos(radians(120)), (-width / 2) * sin(radians(120)));
+  line(0, 0, (-width / 2) * cos(radians(150)), (-width / 2) * sin(radians(150)));
+  
+  popMatrix();
+}
+
+// This function now draws all the active pings
+void drawPings() {
+  // Loop through the ArrayList backwards, as we may be removing items
+  for (int i = pings.size() - 1; i >= 0; i--) {
+    RadarPing p = pings.get(i);
+    p.update(); // Fade the ping
+    p.display(); // Draw the ping
+    if (p.isDead()) {
+      pings.remove(i); // Remove the ping if it has faded completely
+    }
+  }
+}
+
+void drawLine() {
+  pushMatrix();
+  translate(width / 2, height - height * 0.074);
+  
+  // Draw the sweeping line with a glow effect
+  float lineX = (height - height * 0.12) * cos(radians(iAngle));
+  float lineY = -(height - height * 0.12) * sin(radians(iAngle));
+  strokeWeight(10);
+  stroke(100, 255, 120, 50); // Outer glow
+  line(0, 0, lineX, lineY);
+  strokeWeight(4);
+  stroke(100, 255, 120, 150); // Inner glow
+  line(0, 0, lineX, lineY);
+
+  popMatrix();
+}
+
+void drawText() {
+  pushMatrix();
+  fill(0, 0, 0, 150); // Semi-transparent background for text
+  noStroke();
+  rect(0, height - height * 0.070, width, height);
+
+  // Set default text color and alignment for the bottom bar
+  fill(80, 255, 150);
+  textSize(35);
+  
+  // N_Tech RADAR on the left
+  textAlign(LEFT, CENTER);
+  text("RADAR", 20, height - (height * 0.035));
+
+  // Angle in the center
+  textAlign(CENTER, CENTER);
+  text("Angle: " + iAngle + "°", width / 2, height - (height * 0.035));
+  
+  // Distance on the right, with separate colors for label and value
+  textAlign(RIGHT, CENTER);
+  String distanceValue;
+  if (iDistance < 40 && iDistance > 0) {
+    distanceValue = iDistance + " cm";
+  } else {
+    distanceValue = "---- ";
+  }
+  
+  // Draw the value in red
+  fill(255, 120, 100); // Red color for the value
+  text(distanceValue, width - 20, height - (height * 0.035));
+  
+  // Calculate width of the value to position the label correctly
+  float valueWidth = textWidth(distanceValue);
+  
+  // Draw the label in green
+  fill(80, 255, 150); // Green color for the label
+  text("Distance: ", width - 20 - valueWidth, height - (height * 0.035));
+
+
+  // --- Draw labels on the radar arc itself ---
+  fill(80, 255, 150);
+  textSize(16);
+  textAlign(CENTER, CENTER);
+  translate(width / 2, height - height * 0.074); // Origin at center of radar base
+  
+  // Angle labels
+  text("0°", width/2 - 20, -10);
+  text("180°", -width/2 + 30, -10);
+  text("90°", 0, -(height - height*0.12) - 15);
+  
+  // Distance labels along the 45-degree line for clarity
+  float maxRadius = height - height * 0.18;
+  float angle = 45; // Place labels along this angle
+  
+  // Only show distance labels if there's enough space
+  if (width > 600) {
+    text("10cm", (maxRadius * 0.25) * cos(radians(angle)), -(maxRadius * 0.25) * sin(radians(angle)));
+    text("20cm", (maxRadius * 0.50) * cos(radians(angle)), -(maxRadius * 0.50) * sin(radians(angle)));
+    text("30cm", (maxRadius * 0.75) * cos(radians(angle)), -(maxRadius * 0.75) * sin(radians(angle)));
+    text("40cm", (maxRadius * 1.00) * cos(radians(angle)), -(maxRadius * 1.00) * sin(radians(angle)));
+  }
+
+  popMatrix();
+}

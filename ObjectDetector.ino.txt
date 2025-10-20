@@ -1,0 +1,116 @@
+// Include the Servo library to control the motor
+#include <Servo.h>
+
+// --- Pin Definitions ---
+const int SERVO_PIN = 11;
+const int TRIG_PIN = 9;
+const int ECHO_PIN = 10;
+const int BUZZER_PIN = 6;
+// Array for green LED pins
+const int GREEN_LED_PINS[] = { 2, 3 };
+// Array for red LED pins
+const int RED_LED_PINS[] = { 4, 5 };
+
+// --- Constants ---
+// Define the distance (in cm) at which an object is considered "detected"
+const int DISTANCE_THRESHOLD = 50;
+// Define the scanning range for the servo (in degrees)
+const int SCAN_START_ANGLE = 0;
+const int SCAN_END_ANGLE = 180;
+
+// Create a servo object
+Servo myServo;
+
+void setup() {
+  // Start serial communication for the radar
+  Serial.begin(9600);
+
+  // Attach the servo to its pin
+  myServo.attach(SERVO_PIN);
+
+  // Set pin modes for sensor
+  pinMode(TRIG_PIN, OUTPUT);
+  pinMode(ECHO_PIN, INPUT);
+
+  // Set pin modes for indicators
+  pinMode(BUZZER_PIN, OUTPUT);
+  for (int pin : GREEN_LED_PINS) {
+    pinMode(pin, OUTPUT);
+  }
+  for (int pin : RED_LED_PINS) {
+    pinMode(pin, OUTPUT);
+  }
+
+  // Set initial state (no object detected)
+  indicateDetection(false);
+}
+
+void loop() {
+  // Sweep the servo from start to end angle
+  for (int pos = SCAN_START_ANGLE; pos <= SCAN_END_ANGLE; pos++) {
+    myServo.write(pos);
+    checkAndIndicate();
+    delay(5);  // Delay for faster movement
+  }
+
+  // Sweep the servo back from end to start angle
+  for (int pos = SCAN_END_ANGLE; pos >= SCAN_START_ANGLE; pos--) {
+    myServo.write(pos);
+    checkAndIndicate();
+    delay(5);  // Delay for faster movement
+  }
+}
+
+/**
+ * Measures distance using the ultrasonic sensor and returns it in cm.
+ */
+long getDistance() {
+  digitalWrite(TRIG_PIN, LOW);
+  delayMicroseconds(2);
+  digitalWrite(TRIG_PIN, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(TRIG_PIN, LOW);
+  long duration = pulseIn(ECHO_PIN, HIGH);
+  return duration * 0.0343 / 2;
+}
+
+/**
+ * Gets distance, updates indicators, and sends data to the computer for the radar.
+ */
+void checkAndIndicate() {
+  long distance = getDistance();
+
+  // Send the angle and distance to the computer in a "angle,distance." format.
+  Serial.print(myServo.read());
+  Serial.print(",");
+  Serial.print(distance);
+  Serial.print(".");  // Use a period as the delimiter for Processing
+
+  // Control LEDs and Buzzer based on distance
+  if (distance < DISTANCE_THRESHOLD && distance > 0) {
+    indicateDetection(true);  // Object detected!
+  } else {
+    indicateDetection(false);  // All clear
+  }
+}
+
+/**
+ * Controls the LEDs and buzzer based on detection status.
+ */
+void indicateDetection(bool detected) {
+  if (detected) {
+    // Turn ON red LEDs, turn OFF green LEDs
+    digitalWrite(GREEN_LED_PINS[0], LOW);
+    digitalWrite(GREEN_LED_PINS[1], LOW);
+    digitalWrite(RED_LED_PINS[0], HIGH);
+    digitalWrite(RED_LED_PINS[1], HIGH);
+    tone(BUZZER_PIN, 5000);
+  } else {
+    // Turn ON green LEDs, turn OFF red LEDs
+    digitalWrite(GREEN_LED_PINS[0], HIGH);
+    digitalWrite(GREEN_LED_PINS[1], HIGH);
+    digitalWrite(RED_LED_PINS[0], LOW);
+    digitalWrite(RED_LED_PINS[1], LOW);
+    noTone(BUZZER_PIN);
+  }
+}
